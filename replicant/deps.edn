@@ -2,5 +2,6 @@
  :deps
  {com.domkm/silk {:mvn/version "0.1.2"}
   no.cjohansen/replicant {:git/url "https://github.com/cjohansen/replicant.git"
-                          :git/sha "a7202a4243e69f63117c1bd1e9cbadcad380c280"}}
+                          :git/sha "a7202a4243e69f63117c1bd1e9cbadcad380c280"}
+  com.cognitect/transit-cljs {:mvn/version "0.8.280"}}
  }
