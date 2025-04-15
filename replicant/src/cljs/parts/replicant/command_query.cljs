@@ -5,7 +5,7 @@
             ))
 
 (defn query-backend
-  [{:keys [ui/store action]}]
+  [{:keys [ui/store action] :as w}]
   (let [[_ query] action]
     (swap! store query/send-request (js/Date.) query)
     (-> (js/fetch (or (:ui/query-endpoint w)
