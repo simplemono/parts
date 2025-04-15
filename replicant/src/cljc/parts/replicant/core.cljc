@@ -54,7 +54,6 @@
         predicates (get-predicates w)
         action-enrichers (get-action-enrichers w)]
     (fn event-handler [replicant-data actions]
-      (prn "predicatespredicatespredicates" predicates)
       (loop [actions actions]
         (when-let [action (first actions)]
           (let [params (-> (merge replicant-data
