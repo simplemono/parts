@@ -1,6 +1,11 @@
 (ns parts.replicant.core
   "Some core parts for Replicant applications."
-  (:require [clojure.walk :as walk]))
+  (:require [clojure.walk :as walk]
+            [replicant.dom :as r]
+
+            #?@(:cljs
+                [[parts.replicant.router :as router]
+                 [replicant.alias :as alias]])))
 
 (defn enrich-action
   [w]
@@ -83,3 +88,94 @@
                       :log/message "Unknown action"
                       :ui/action action}))
               )))))))
+
+(defn add-ui-log
+  [w]
+  (assoc w
+         :ui/log
+         (fn [log-entry]
+           #?(:cljs
+              ((or (aget js/console
+                         (name (:log/level log-entry)))
+                   js/console.log)
+               (pr-str log-entry))))))
+
+(defn add-store
+  [w]
+  (assoc w
+         :ui/store
+         (atom {})))
+
+(defn add-pages
+  [w]
+  (assoc w
+         :ui/pages
+         (filter
+           (fn [entry]
+             (and (:page-id entry)
+                  (:render entry)))
+           ((:ui/get-register w)))))
+
+#?(:cljs
+   (defn add-routes
+     [w]
+     (assoc w
+            :ui/routes
+            (router/make-routes (:ui/pages w)))))
+
+(defn add-render-watcher!
+  [w]
+  (add-watch (:ui/store w)
+             :ui/render-watcher
+             (fn [_ _ _ state]
+               ((:ui/render! w) (assoc w
+                                       :ui/state
+                                       state))))
+  w)
+
+(defn add-event-handler
+  [w]
+  (assoc w
+         :ui/event-handler
+         (event-handler w)))
+
+(defn add-dispatch!
+  [w]
+  (r/set-dispatch! (:ui/event-handler w))
+  w)
+
+(defn add-store-dispatch!
+  [w]
+  (swap! (:ui/store w)
+         assoc
+         :replicant/dispatch!
+         (fn [{:keys [actions] :as params}]
+           ((:ui/event-handler w) (dissoc params
+                                          :actions)
+            actions)))
+  w)
+
+#?(:cljs
+   (defn add-route-click!
+     [w]
+     (js/document.body.addEventListener
+       "click"
+       (fn [event]
+         (router/route-click (assoc w
+                                    :event
+                                    event))))
+     w))
+
+#?(:cljs
+   (defn add-navigate!
+     [w]
+     (js/window.addEventListener
+       "popstate"
+       (fn [_] (router/navigate! w)))
+     w))
+
+#?(:cljs
+   (defn add-routing-anchor!
+     [w]
+     (alias/register! :ui/a router/routing-anchor)
+     w))
