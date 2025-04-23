@@ -1,3 +1,4 @@
 {:paths ["src/clj"]
  :deps
- {clout/clout {:mvn/version "2.2.1"}}}
+ {clout/clout {:mvn/version "2.2.1"}
+  com.cognitect/transit-clj {:mvn/version "1.0.333"}}}
