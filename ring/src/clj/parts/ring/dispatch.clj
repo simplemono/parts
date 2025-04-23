@@ -9,7 +9,7 @@
    missing, then `dispatch` assumes that `:ring/request` will be handled
    asynchronously. For that reason `async-ring-handler` adds the `:ring/respond`
    and `:ring/raise` entries that correspond to the Ring functions of an async
-   Ring handler. ")
+   Ring handler.")
 
 (defn dispatch
   "Dispatches the world value with the `:ring/request` to the registered
