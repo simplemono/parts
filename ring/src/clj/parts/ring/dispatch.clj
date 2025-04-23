@@ -1,4 +1,15 @@
-(ns parts.ring.dispatch)
+(ns parts.ring.dispatch
+  "A `:ring/dispatcher` is responsible to find a Ring handler that handles the
+   request.
+
+   Each registered dispatcher receives the world value with the `:ring/request`.
+   By returning a truthy value a dispatcher signals that it wants to handle the
+   request. Usually it returns the world value with a new `:ring/response` entry
+   that will be used as Ring response map. If a `:ring/response` entry is
+   missing, then `dispatch` assumes that `:ring/request` will be handled
+   asynchronously. For that reason `async-ring-handler` adds the `:ring/respond`
+   and `:ring/raise` entries that correspond to the Ring functions of an async
+   Ring handler. ")
 
 (defn dispatch
   "Dispatches the world value with the `:ring/request` to the registered
