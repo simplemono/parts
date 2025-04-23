@@ -18,7 +18,7 @@
                              ;; String into a JS integer:
                              (when (and (keyword? x)
                                         (= x
-                                           :event/target.value))
+                                           :event/target.value-int))
                                (-> (:replicant/js-event w)
                                    .-target
                                    .-value
