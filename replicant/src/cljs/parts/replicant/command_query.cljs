@@ -5,15 +5,18 @@
             ))
 
 (defn query-backend
-  [{:keys [ui/store action] :as w}]
+  [{:keys [ui/store action :transit/read-opts :transit/write-opts] :as w}]
   (let [[_ query] action]
     (swap! store query/send-request (js/Date.) query)
     (-> (js/fetch (or (:ui/query-endpoint w)
                       "/query")
                   #js {:method "POST"
-                       :body (transit/transit-encode query)})
+                       :body (transit/transit-encode query
+                                                     write-opts)})
         (.then #(.text %))
-        (.then transit/transit-decode)
+        (.then (fn [text]
+                 (transit/transit-decode text
+                                         read-opts)))
         (.then #(swap! store query/receive-response (js/Date.) query %))
         (.catch (fn [error]
                   (js/console.error "query-backend error:" error)
@@ -24,16 +27,19 @@
                          {:error (.-message error)}))))))
 
 (defn issue-command
-  [{:keys [ui/store action] :as w}]
+  [{:keys [ui/store action :transit/read-opts :transit/write-opts] :as w}]
   (let [[_ command & [{:keys [on-success on-error]}]] action
         event-handler (:ui/event-handler w)]
     (swap! store command/issue-command (js/Date.) command)
     (-> (js/fetch (or (:ui/command-endpoint w)
                       "/command")
                   #js {:method "POST"
-                       :body (transit/transit-encode command)})
+                       :body (transit/transit-encode command
+                                                     write-opts)})
         (.then #(.text %))
-        (.then transit/transit-decode)
+        (.then (fn [text]
+                 (transit/transit-decode text
+                                         read-opts)))
         (.then (fn [res]
                  (swap! store command/receive-response (js/Date.) command res)
                  (when (and (:success? res)
