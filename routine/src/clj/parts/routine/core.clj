@@ -15,25 +15,31 @@
 
 ;; Example: run a task every 5 seconds with an initial 1 second delay
 (defn schedule-routine!
-  [scheduler routine]
-  (.scheduleWithFixedDelay scheduler
-                           (fn []
-                             (try
-                               (:routine/fn routine)
-                               (catch Throwable e
-                                 ;; If `scheduleWithFixedDelay`
-                                 ;; encounters an exception it
-                                 ;; suppresses subsequent
-                                 ;; executions. Therefore any errors
-                                 ;; are catched and logged here to
-                                 ;; keep executing the `routine-fn`,
-                                 ;; even if it contains a bug and does
-                                 ;; not catch all exceptions:
-
-                                 )))
-                           0
-                           (:routine/interval-ms routine)
-                           java.util.concurrent.TimeUnit/MILLISECONDS))
+  [w]
+  (let [routine (:routine w)]
+    (.scheduleWithFixedDelay (:scheduler w)
+                             (fn []
+                               (try
+                                 (:routine/fn routine)
+                                 (catch Throwable e
+                                   ;; If `scheduleWithFixedDelay`
+                                   ;; encounters an exception it
+                                   ;; suppresses subsequent
+                                   ;; executions. Therefore any errors
+                                   ;; are catched and logged here to
+                                   ;; keep executing the `routine-fn`,
+                                   ;; even if it contains a bug and does
+                                   ;; not catch all exceptions:
+                                   ((:log/error w
+                                      identity)
+                                    {:log/error :routine/unhandled-exception
+                                     :message "unhandled exception - a routine-fn should handle all exceptions"
+                                     :routine routine
+                                     :exception e})
+                                   )))
+                             0
+                             (:routine/interval-ms routine)
+                             java.util.concurrent.TimeUnit/MILLISECONDS)))
 
 (def termination-timeout (* 1000 30))
 
@@ -41,32 +47,33 @@
   "Shutdowns a `java.util.concurrent.ExecutorService` gracefully. Based
    on example `shutdownAndAwaitTermination` from
    https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/ExecutorService.html"
-  [^java.util.concurrent.ExecutorService scheduler]
+  [w]
   ;; Disable new tasks from being submitted:
-  (.shutdown scheduler)
-  (try
-    ;; Wait a while for existing tasks to terminate:
-    (when-not (.awaitTermination scheduler
-                                 termination-timeout
-                                 java.util.concurrent.TimeUnit/MILLISECONDS)
-      ;; Cancel currently executing tasks:
-      (.shutdownNow scheduler)
-      ;; Wait a while for tasks to respond to being cancelled:
+  (let [^java.util.concurrent.ExecutorService scheduler (:scheduler w)]
+    (.shutdown scheduler)
+    (try
+      ;; Wait a while for existing tasks to terminate:
       (when-not (.awaitTermination scheduler
                                    termination-timeout
                                    java.util.concurrent.TimeUnit/MILLISECONDS)
-        (.println System/err
-                  "Scheduler did not terminate.")))
-    (catch InterruptedException e
-      ;; (Re-)Cancel if current thread also interrupted:
-      (.shutdownNow scheduler)
-      ;; In comparison to the example, do not interrupt the Thread
-      ;; that executes the system shutdown:
-      ;;
-      ;; (.interrupt (Thread/currentThread))
-      )
-    )
-  )
+        ;; Cancel currently executing tasks:
+        (.shutdownNow scheduler)
+        ;; Wait a while for tasks to respond to being cancelled:
+        (when-not (.awaitTermination scheduler
+                                     termination-timeout
+                                     java.util.concurrent.TimeUnit/MILLISECONDS)
+          ((:log/error w
+             identity)
+           {:log/error :scheduler/termination-failed
+            :scheduler scheduler})))
+      (catch InterruptedException e
+        ;; (Re-)Cancel if current thread also interrupted:
+        (.shutdownNow scheduler)
+        ;; In comparison to the example, do not interrupt the Thread
+        ;; that executes the system shutdown:
+        ;;
+        ;; (.interrupt (Thread/currentThread))
+        ))))
 
 (defn schedule-light-routines!
   [w]
@@ -77,8 +84,9 @@
         scheduled-routines (doall (map (fn [r]
                                          (assoc r
                                                 :routine/scheduled-future
-                                                (schedule-routine! (:routine/light-routine-scheduler w)
-                                                                   r)))
+                                                (schedule-routine! (assoc w
+                                                                          :scheduler (:routine/light-routine-scheduler w)
+                                                                          :routine r))))
                                        light-routines))]
     (assoc w
            :routine/scheduled-light-routines
@@ -121,6 +129,8 @@
 
 (defn stop!
   [w]
-  (shutdown-and-await-termination (:routine/heavy-routine-scheduler w))
-  (shutdown-and-await-termination (:routine/light-routine-scheduler w))
+  (shutdown-and-await-termination (assoc w
+                                         :scheduler (:routine/heavy-routine-scheduler w)))
+  (shutdown-and-await-termination (assoc w
+                                         :scheduler (:routine/light-routine-scheduler w)))
   )
