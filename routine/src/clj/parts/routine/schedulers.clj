@@ -35,16 +35,6 @@
          :routine/light-routine-scheduler
          @light-routine-scheduler))
 
-(defn idle?
-  "Check if there are active threads at the moment that "
-  [w]
-  (and (zero?
-         (.getActiveCount (:routine/heavy-routine-scheduler
-                            w)))
-       (zero?
-         (.getActiveCount (:routine/light-routine-scheduler
-                            w)))))
-
 (comment
   (core/schedule-routine @light-routine-scheduler
                          (fn [] (println "tick" (java.time.Instant/now)))

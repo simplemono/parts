@@ -1,15 +1,5 @@
-(ns parts.routine.core)
-
-(defn find-routine-def
-  [register routine]
-  (when-let [kind (:routine/kind routine)]
-    (some
-      (fn [entry]
-        (when (and (:routine/fn entry)
-                   (= (:routine/kind entry)
-                      kind))
-          entry))
-      register)))
+(ns parts.routine.core
+  (:require [parts.routine.schedulers :as schedulers]))
 
 (defn add-routines
   [w]
@@ -78,3 +68,59 @@
     )
   )
 
+(defn schedule-light-routines!
+  [w]
+  (let [light-routines (filter
+                         (fn [routine]
+                           (= (:routine/category routine) :light))
+                         (:routines w))
+        scheduled-routines (doall (map (fn [r]
+                                         (assoc r
+                                                :routine/scheduled-future
+                                                (schedule-routine! (:routine/light-routine-scheduler w)
+                                                                   r)))
+                                       light-routines))]
+    (assoc w
+           :routine/scheduled-light-routines
+           scheduled-routines)))
+
+(defn schedule-heavy-routines!
+  [w]
+  (let [heavy-routines (filter
+                         (fn [routine]
+                           (= (:routine/category routine) :heavy))
+                         (:routines w))
+        scheduled-routines (doall (map (fn [r]
+                                         (assoc r
+                                                :routine/scheduled-future
+                                                (schedule-routine! (:routine/heavy-routine-scheduler w)
+                                                                   r)))
+                                       heavy-routines))]
+    (assoc w
+           :routine/scheduled-heavy-routines
+           scheduled-routines)))
+
+(defn idle?
+  "Check if there are active threads at the moment that "
+  [w]
+  (and (zero?
+         (.getActiveCount (:routine/heavy-routine-scheduler
+                            w)))
+       (zero?
+         (.getActiveCount (:routine/light-routine-scheduler
+                            w)))))
+
+(defn start!
+  [w]
+  (-> w
+      (add-routines)
+      (schedulers/add-heavy-routine-scheduler)
+      (schedulers/add-light-routine-scheduler)
+      (schedule-light-routines!)
+      (schedule-heavy-routines!)))
+
+(defn stop!
+  [w]
+  (shutdown-and-await-termination (:routine/heavy-routine-scheduler w))
+  (shutdown-and-await-termination (:routine/light-routine-scheduler w))
+  )
