@@ -1,4 +1,9 @@
 (ns parts.routine.core
+  "Manage periodic routines in the system:
+
+  • Discover and validate routines from the registry
+  • Schedule each on light or heavy executors with fixed delays
+  • Provide start!, stop! and idle? functions to control the lifecycle of the routines."
   (:require [parts.routine.schedulers :as schedulers]))
 
 (defn get-routines

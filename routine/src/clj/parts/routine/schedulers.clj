@@ -1,7 +1,10 @@
-(ns parts.routine.schedulers)
+(ns parts.routine.schedulers
+  "Provides scheduled executors for running routine tasks:
 
-;; There should only be 2 threads that work on heavy routines
-;; like rendering a video.
+   - Heavy routines (e.g., video rendering) are handled by a fixed-size
+     thread pool (default size 2, configurable via ::heavy-routine-pool-size).
+   - Light routines are executed immediately on a single virtual thread
+     scheduler for short-lived or non-blocking tasks.")
 
 (def ^:private default-heavy-routine-pool-size 2)
 
@@ -12,8 +15,6 @@
          (java.util.concurrent.Executors/newScheduledThreadPool (::heavy-routine-pool-size w
                                                                   default-heavy-routine-pool-size))))
 
-;; Tasks that are rather light, should be executed instantly by
-;; executing them in  virtual threads.
 
 (def ^:private virtual-thread-factory
   (.factory (Thread/ofVirtual)))
