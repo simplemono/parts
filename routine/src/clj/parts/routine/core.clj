@@ -1,19 +1,22 @@
 (ns parts.routine.core
   (:require [parts.routine.schedulers :as schedulers]))
 
-(defn add-routines
+(defn get-routines
   [w]
-  (assoc w
-         :routines
-         (filter
-           (fn [routine]
-             (when (:routine/kind routine)
-               (assert (:routine/fn routine))
-               (assert (:routine/interval-ms routine))
-               (assert (:routine/category routine))))
-           ((:system/get-register w)))))
+  (filter :routine/kind
+    ((:system/get-register w))))
 
-;; Example: run a task every 5 seconds with an initial 1 second delay
+(defn check-routines
+  [w]
+  (doseq [routine (get-routines w)
+          k [:routine/category
+             :routine/fn
+             :routine/interval-ms]]
+    (when-not (get routine k)
+      (throw (ex-info (str "Routine map is missing required key " k)
+                      {:routine routine
+                       :missing-key k})))))
+
 (defn schedule-routine!
   [w]
   (let [routine (:routine w)]
@@ -30,7 +33,7 @@
                                    ;; keep executing the `routine-fn`,
                                    ;; even if it contains a bug and does
                                    ;; not catch all exceptions:
-                                   ((:log/error w
+                                   ((:log/log w
                                       identity)
                                     {:log/error :routine/unhandled-exception
                                      :message "unhandled exception - a routine-fn should handle all exceptions"
@@ -40,8 +43,6 @@
                              0
                              (:routine/interval-ms routine)
                              java.util.concurrent.TimeUnit/MILLISECONDS)))
-
-(def termination-timeout (* 1000 30))
 
 (defn shutdown-and-await-termination
   "Shutdowns a `java.util.concurrent.ExecutorService` gracefully. Based
@@ -54,15 +55,17 @@
     (try
       ;; Wait a while for existing tasks to terminate:
       (when-not (.awaitTermination scheduler
-                                   termination-timeout
+                                   (or (::termination-timeout w)
+                                       (* 1000 30))
                                    java.util.concurrent.TimeUnit/MILLISECONDS)
         ;; Cancel currently executing tasks:
         (.shutdownNow scheduler)
         ;; Wait a while for tasks to respond to being cancelled:
         (when-not (.awaitTermination scheduler
-                                     termination-timeout
+                                     (or (::force-termination-timeout w)
+                                         (* 1000 30))
                                      java.util.concurrent.TimeUnit/MILLISECONDS)
-          ((:log/error w
+          ((:log/log w
              identity)
            {:log/error :scheduler/termination-failed
             :scheduler scheduler})))
@@ -80,48 +83,37 @@
   (let [light-routines (filter
                          (fn [routine]
                            (= (:routine/category routine) :light))
-                         (:routines w))
-        scheduled-routines (doall (map (fn [r]
-                                         (assoc r
-                                                :routine/scheduled-future
-                                                (schedule-routine! (assoc w
-                                                                          :scheduler (:routine/light-routine-scheduler w)
-                                                                          :routine r))))
-                                       light-routines))]
-    (assoc w
-           :routine/scheduled-light-routines
-           scheduled-routines)))
+                         (get-routines w))]
+    (for [routine light-routines]
+      (schedule-routine! (assoc w
+                                :scheduler (:routine/light-routine-scheduler w)
+                                :routine routine)))
+    w))
 
 (defn schedule-heavy-routines!
   [w]
   (let [heavy-routines (filter
                          (fn [routine]
                            (= (:routine/category routine) :heavy))
-                         (:routines w))
-        scheduled-routines (doall (map (fn [r]
-                                         (assoc r
-                                                :routine/scheduled-future
-                                                (schedule-routine! (:routine/heavy-routine-scheduler w)
-                                                                   r)))
-                                       heavy-routines))]
-    (assoc w
-           :routine/scheduled-heavy-routines
-           scheduled-routines)))
+                         (get-routines w))]
+    (for [routine heavy-routines]
+      (schedule-routine! (assoc w
+                                :scheduler (:routine/heavy-routine-scheduler w)
+                                :routine routine)))
+    w))
 
 (defn idle?
-  "Check if there are active threads at the moment that "
+  "Check if there are active threads at the moment. When there are no active threads, "
   [w]
-  (and (zero?
-         (.getActiveCount (:routine/heavy-routine-scheduler
-                            w)))
-       (zero?
-         (.getActiveCount (:routine/light-routine-scheduler
-                            w)))))
+  (and (or (not (:routine/heavy-routine-scheduler w))
+           (zero? (.getActiveCount (:routine/heavy-routine-scheduler w))))
+       (or (not (:routine/light-routine-scheduler w))
+           (zero? (.getActiveCount (:routine/light-routine-scheduler w))))))
 
 (defn start!
   [w]
+  (check-routines w)
   (-> w
-      (add-routines)
       (schedulers/add-heavy-routine-scheduler)
       (schedulers/add-light-routine-scheduler)
       (schedule-light-routines!)
@@ -129,8 +121,13 @@
 
 (defn stop!
   [w]
-  (shutdown-and-await-termination (assoc w
-                                         :scheduler (:routine/heavy-routine-scheduler w)))
-  (shutdown-and-await-termination (assoc w
-                                         :scheduler (:routine/light-routine-scheduler w)))
+  (when-let [heavy-routine-scheduler (:routine/heavy-routine-scheduler w)]
+    (shutdown-and-await-termination (assoc w
+                                           :scheduler heavy-routine-scheduler)))
+  (when-let [light-routine-scheduler (:routine/light-routine-scheduler w)]
+    (shutdown-and-await-termination (assoc w
+                                           :scheduler light-routine-scheduler)))
+  (for [routine (:routines w)]
+    (when-let [stop-fn (:routine/stop-fn routine)]
+      (stop-fn)))
   )
