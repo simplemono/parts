@@ -1,23 +1,40 @@
 (ns parts.routine.schedulers
-  "Provides scheduled executors for running routine tasks:
+  "Provides executors for running routine tasks:
 
-   - Heavy routines (e.g., video rendering) are handled by a fixed-size
-     thread pool (default size 2, configurable via ::heavy-routine-pool-size).
-   - Light routines are executed immediately on a single virtual thread
-     scheduler for short-lived or non-blocking tasks.")
+   - Heavy routines (e.g. video rendering) are handled by a ThreadPool (default
+     size 2, configurable via `::heavy-routine-pool-size`).
+
+   - Light routines (short-lived, not CPU or memory intensive) are executed on a
+     virtual thread for or non-blocking tasks.")
 
 (def default-heavy-routine-pool-size 2)
 
-(defn add-heavy-routine-scheduler
+(defn add-heavy-routine-executor
   [w]
   (assoc w
-         :routine/heavy-routine-scheduler
-         (java.util.concurrent.Executors/newScheduledThreadPool (::heavy-routine-pool-size w
-                                                                  default-heavy-routine-pool-size))))
+         :routine/heavy-routine-executor
+         (java.util.concurrent.ThreadPoolExecutor.
+           ;; corePoolSize:
+           0
+           ;; maximumPoolSize:
+           (or (::heavy-routine-pool-size w)
+               default-heavy-routine-pool-size)
+           ;; keepAliveTime:
+           1
+           ;; in seconds:
+           java.util.concurrent.TimeUnit/SECONDS
+           ;; a LinkedBlockingQueue with a capacity of Integer.MAX_VALUE:
+           (java.util.concurrent.LinkedBlockingQueue.)
+           )))
 
-(defn add-light-routine-scheduler
+(defn add-light-routine-executor
   [w]
   (assoc w
-         :routine/light-routine-scheduler
-         (java.util.concurrent.Executors/newScheduledThreadPool 1
-                                                                (.factory (Thread/ofVirtual)))))
+         :routine/light-routine-executor
+         (java.util.concurrent.Executors/newVirtualThreadPerTaskExecutor)))
+
+(defn add-scheduled-executor
+  [w]
+  (assoc w
+         :routine/scheduled-executor
+         (java.util.concurrent.Executors/newSingleThreadScheduledExecutor)))

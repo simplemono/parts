@@ -1,19 +1,23 @@
 (ns parts.routine.core
   "Manage periodic routines in the system:
 
-  • Discover and validate routines from the registry
-  • Schedule each on light or heavy executors with fixed delays
-  • Provide start!, stop! and idle? functions to control the lifecycle of the routines."
+  - Discover and validate routines from the registry
+
+  - Schedule each on light or heavy executors with fixed delays
+
+  - Provide start!, stop! and idle? functions to control the lifecycle of the routines."
   (:require [parts.routine.schedulers :as schedulers]))
 
-(defn get-routines
-  [w]
-  (filter :routine/kind
-    ((:system/get-register w))))
+(defonce active-routines-count
+  (delay
+    (java.util.concurrent.atomic.AtomicLong. 0)))
 
-(defn check-routines
+(defn validate-routines
+  "Validates all routine entries in the system register."
   [w]
-  (doseq [routine (get-routines w)
+  ;; TODO: use clojure.spec to validate it:
+  (doseq [routine (filter :routine/fn
+                          ((:system/get-register w)))
           k [:routine/category
              :routine/fn
              :routine/interval-ms]]
@@ -22,29 +26,48 @@
                       {:routine routine
                        :missing-key k})))))
 
+(defn call-routine!
+  "Calls the `:routine/fn`. Catches all `Throwable`s and logs an error, since a
+   `:routine/fn` should usually catch all `Throwable`s itself.
+
+   Increments the `active-routines-count` when the routine starts and decrements
+   it when the routine is done."
+  [w]
+  (.incrementAndGet @active-routines-count)
+  (try
+    ((:routine/fn (:routine w)))
+    (catch Throwable e
+      ;; If `scheduleWithFixedDelay` encounters an exception it suppresses
+      ;; subsequent executions. Therefore any errors are catched and logged here
+      ;; to keep executing the `routine-fn`, even if it contains a bug and does
+      ;; not catch all exceptions:
+      ((:log/log w
+                 identity)
+       {:log/error :routine/unhandled-exception
+        :message "unhandled exception - a routine-fn should handle all exceptions"
+        :routine (:routine w)
+        :exception e})
+      )
+    (finally
+      (.decrementAndGet @active-routines-count))))
+
 (defn schedule-routine!
+  "Schedules a routine on the `:routine/scheduled-executor`, which delegates the
+   routine task to the `:routine/heavy-routine-executor` or
+   `:routine/light-routine-executor` executor."
   [w]
   (let [routine (:routine w)]
-    (.scheduleWithFixedDelay (:scheduler w)
+    (.scheduleWithFixedDelay (:routine/scheduled-executor w)
                              (fn []
-                               (try
-                                 (:routine/fn routine)
-                                 (catch Throwable e
-                                   ;; If `scheduleWithFixedDelay`
-                                   ;; encounters an exception it
-                                   ;; suppresses subsequent
-                                   ;; executions. Therefore any errors
-                                   ;; are catched and logged here to
-                                   ;; keep executing the `routine-fn`,
-                                   ;; even if it contains a bug and does
-                                   ;; not catch all exceptions:
-                                   ((:log/log w
-                                      identity)
-                                    {:log/error :routine/unhandled-exception
-                                     :message "unhandled exception - a routine-fn should handle all exceptions"
-                                     :routine routine
-                                     :exception e})
-                                   )))
+                               (case (:routine/category routine)
+                                 :heavy
+                                 (.execute (:routine/heavy-routine-executor w)
+                                           (fn []
+                                             (call-routine! w)))
+                                 :light
+                                 (.execute (:routine/light-routine-executor w)
+                                           (fn []
+                                             (call-routine! w)))))
                              0
                              (:routine/interval-ms routine)
                              java.util.concurrent.TimeUnit/MILLISECONDS)))
@@ -55,7 +78,7 @@
    https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/ExecutorService.html"
   [w]
   ;; Disable new tasks from being submitted:
-  (let [^java.util.concurrent.ExecutorService scheduler (:scheduler w)]
+  (let [^java.util.concurrent.ExecutorService scheduler (:executor w)]
     (.shutdown scheduler)
     (try
       ;; Wait a while for existing tasks to terminate:
@@ -72,9 +95,9 @@
                                      java.util.concurrent.TimeUnit/MILLISECONDS)
           ((:log/log w
              identity)
-           {:log/error :scheduler/termination-failed
-            :scheduler scheduler})))
-      (catch InterruptedException e
+           {:log/error ::termination-failed
+            :executor scheduler})))
+      (catch InterruptedException _e
         ;; (Re-)Cancel if current thread also interrupted:
         (.shutdownNow scheduler)
         ;; In comparison to the example, do not interrupt the Thread
@@ -83,56 +106,38 @@
         ;; (.interrupt (Thread/currentThread))
         ))))
 
-(defn schedule-light-routines!
+(defn schedule-routines!
   [w]
-  (let [light-routines (filter
-                         (fn [routine]
-                           (= (:routine/category routine) :light))
-                         (get-routines w))]
-    (doseq [routine light-routines]
-      (schedule-routine! (assoc w
-                                :scheduler (:routine/light-routine-scheduler w)
-                                :routine routine)))
-    w))
-
-(defn schedule-heavy-routines!
-  [w]
-  (let [heavy-routines (filter
-                         (fn [routine]
-                           (= (:routine/category routine) :heavy))
-                         (get-routines w))]
-    (doseq [routine heavy-routines]
-      (schedule-routine! (assoc w
-                                :scheduler (:routine/heavy-routine-scheduler w)
-                                :routine routine)))
-    w))
+  (doseq [routine (filter
+                    (fn [routine]
+                      (:routine/fn routine))
+                    ((:system/get-register w)))]
+    (schedule-routine! (assoc w
+                              :routine routine)))
+  w)
 
 (defn idle?
-  "Check if there are active threads at the moment. When there are no active threads, "
-  [w]
-  (and (or (not (:routine/heavy-routine-scheduler w))
-           (zero? (.getActiveCount (:routine/heavy-routine-scheduler w))))
-       (or (not (:routine/light-routine-scheduler w))
-           (zero? (.getActiveCount (:routine/light-routine-scheduler w))))))
+  "Returns true, if no routines are currently running on any Thread."
+  [_w]
+  (zero? @active-routines-count))
 
 (defn start!
   [w]
-  (check-routines w)
+  (validate-routines w)
   (-> w
-      (schedulers/add-heavy-routine-scheduler)
-      (schedulers/add-light-routine-scheduler)
-      (schedule-light-routines!)
-      (schedule-heavy-routines!)))
+      (schedulers/add-heavy-routine-executor)
+      (schedulers/add-light-routine-executor)
+      (schedulers/add-scheduled-executor)
+      (schedule-routines!)))
 
 (defn stop!
   [w]
-  (when-let [heavy-routine-scheduler (:routine/heavy-routine-scheduler w)]
+  (doseq [executor (keep
+                     (fn [key]
+                       (get w
+                            key))
+                     [:routine/scheduled-executor
+                      :routine/light-routine-executor
+                      :routine/heavy-routine-executor])]
     (shutdown-and-await-termination (assoc w
-                                           :scheduler heavy-routine-scheduler)))
-  (when-let [light-routine-scheduler (:routine/light-routine-scheduler w)]
-    (shutdown-and-await-termination (assoc w
-                                           :scheduler light-routine-scheduler)))
-  (for [routine (:routines w)]
-    (when-let [stop-fn (:routine/stop-fn routine)]
-      (stop-fn)))
-  )
+                                           :executor executor))))
