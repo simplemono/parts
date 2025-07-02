@@ -89,7 +89,7 @@
                          (fn [routine]
                            (= (:routine/category routine) :light))
                          (get-routines w))]
-    (for [routine light-routines]
+    (doseq [routine light-routines]
       (schedule-routine! (assoc w
                                 :scheduler (:routine/light-routine-scheduler w)
                                 :routine routine)))
@@ -101,7 +101,7 @@
                          (fn [routine]
                            (= (:routine/category routine) :heavy))
                          (get-routines w))]
-    (for [routine heavy-routines]
+    (doseq [routine heavy-routines]
       (schedule-routine! (assoc w
                                 :scheduler (:routine/heavy-routine-scheduler w)
                                 :routine routine)))
