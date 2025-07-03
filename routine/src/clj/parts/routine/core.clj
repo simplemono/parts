@@ -68,7 +68,8 @@
                                  (.execute (:routine/light-routine-executor w)
                                            (fn []
                                              (call-routine! w)))))
-                             0
+                             (or (:routine/initial-delay-ms w)
+                                 (:routine/interval-ms routine))
                              (:routine/interval-ms routine)
                              java.util.concurrent.TimeUnit/MILLISECONDS)))
 
