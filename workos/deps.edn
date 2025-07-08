@@ -1,0 +1,7 @@
+{:paths ["src"]
+ :deps
+ {clj-http/clj-http {:mvn/version "3.13.0"}
+  lambdaisland/uri {:mvn/version "1.19.155"}
+  buddy/buddy-sign {:mvn/version "3.5.351"}
+  ring/ring-core {:mvn/version "1.14.2"}}
+ }
