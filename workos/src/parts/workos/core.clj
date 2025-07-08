@@ -147,3 +147,71 @@
                  [:organization-response
                   :body
                   :id])))
+
+(defn refresh-token-request
+  [w]
+  {:request-method :post
+   :url "https://api.workos.com/user_management/authenticate"
+   :form-params {:client_id (:workos/client-id w)
+                 :client_secret ((:workos/get-api-key w))
+                 :grant_type "refresh_token"
+                 :refresh_token (:auth/refresh-token w)
+                 :organization_id (:workos/organization-id w)
+                 :ip_address (:remote-addr (:ring/request w))
+                 :user_agent (get-in w
+                                     [:ring/request
+                                      :headers
+                                      "user-agent"])}
+   :unexceptional-status #{200 400}
+   :content-type :json
+   :as :json})
+
+(defn add-refresh-token-request
+  [w]
+  (assoc w
+         :refresh-token-request
+         (refresh-token-request w)))
+
+(defn add-refresh-token-response
+  [w]
+  (assoc w
+         :refresh-token-response
+         (when (:auth/refresh-token w)
+           ((:workos/client w) (:refresh-token-request w)))))
+
+(defn get-refresh-auth
+  [w]
+  (when (= (:status (:refresh-token-response w))
+           200)
+    {:auth/access-token (get-in w
+                                [:refresh-token-response
+                                 :body
+                                 :access_token])
+     :auth/refresh-token (get-in w
+                                 [:refresh-token-response
+                                  :body
+                                  :refresh_token])}))
+
+(defn refresh-auth
+  [w]
+  (merge w
+         (get-refresh-auth w)))
+
+(defn prepare-refresh
+  [w]
+  (-> w
+      (add-workos-client)
+      (add-organization-request)
+      (add-organization-response)
+      (add-workos-organization-id)
+      (add-refresh-token-request)))
+
+(defn refresh-if-necessary
+  [w]
+  (if (= (:cause (:auth/jwt w))
+         :exp)
+    (-> w
+        (prepare-refresh)
+        (add-refresh-token-response)
+        (refresh-auth))
+    w))
