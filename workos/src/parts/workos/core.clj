@@ -38,7 +38,7 @@
   [w]
   (assoc w
          :auth/jwk-public-key
-         (get-jwks w)))
+         (first (get-jwks w))))
 
 (defn add-client-id
   [w]
