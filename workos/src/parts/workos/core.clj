@@ -215,3 +215,30 @@
         (add-refresh-token-response)
         (refresh-auth))
     w))
+
+(defn list-user-request
+  [w]
+  {:request-method :get
+   :url "https://api.workos.com/user_management/users"
+   :query-params {:email (:user/email w)
+                  :limit 1}
+   :content-type :json
+   :as :json})
+
+(defn add-list-user-request
+  [w]
+  (assoc w
+         :list-user-request
+         (list-user-request w)))
+
+(defn add-list-user-response
+  [w]
+  (assoc w
+         :list-user-response
+         ((:workos/client w) (:list-user-request w))))
+
+(defn add-workos-user-id
+  [w]
+  (assoc w
+         :workos/user-id
+         (:id (first (:data (:body (:list-user-response w)))))))
