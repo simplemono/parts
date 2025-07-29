@@ -5,8 +5,7 @@
 
   - Schedule each on light or heavy executors with fixed delays
 
-  - Provide start!, stop! and idle? functions to control the lifecycle of the routines."
-  (:require [parts.routine.schedulers :as schedulers]))
+  - Provide start!, stop! and idle? functions to control the lifecycle of the routines.")
 
 (defonce active-routines-count
   (delay
@@ -56,13 +55,12 @@
    routine task to the `:routine/heavy-routine-executor` or
    `:routine/light-routine-executor` executor."
   [w]
-  (let [routine (:routine w)]
-    (.scheduleWithFixedDelay (:routine/scheduled-executor w)
+  (let [routine (:routine w)
+        executor (get-in w
+                         [::scheduled-executors (:routine/category routine)])]
+    (.scheduleWithFixedDelay executor
                              (fn []
-                               (case (:routine/category routine)
-                                 :heavy (call-routine! w)
-                                 :light (call-routine! w)
-                                 ))
+                               (call-routine! w))
                              (or (:routine/initial-delay-ms routine)
                                  (:routine/interval-ms routine))
                              (:routine/interval-ms routine)
@@ -102,6 +100,22 @@
         ;; (.interrupt (Thread/currentThread))
         ))))
 
+(defn add-light-scheduled-executor
+  [w]
+  (assoc-in w
+            [::scheduled-executors
+             :light]
+            (java.util.concurrent.ScheduledThreadPoolExecutor. (or (::light-routine-pool-size w)
+                                                                   10))))
+
+(defn add-heavy-scheduled-executor
+  [w]
+  (assoc-in w
+            [::scheduled-executors
+             :heavy]
+            (java.util.concurrent.ScheduledThreadPoolExecutor. (or (::heavy-routine-pool-size w)
+                                                                  1))))
+
 (defn schedule-routines!
   [w]
   (doseq [routine (filter
@@ -121,19 +135,12 @@
   [w]
   (validate-routines w)
   (-> w
-      (schedulers/add-heavy-routine-executor)
-      (schedulers/add-light-routine-executor)
-      (schedulers/add-scheduled-executor)
+      (add-heavy-scheduled-executor)
+      (add-light-scheduled-executor)
       (schedule-routines!)))
 
 (defn stop!
   [w]
-  (doseq [executor (keep
-                     (fn [key]
-                       (get w
-                            key))
-                     [:routine/scheduled-executor
-                      :routine/light-routine-executor
-                      :routine/heavy-routine-executor])]
+  (doseq [executor (vals (::scheduled-executors w))]
     (shutdown-and-await-termination (assoc w
                                            :executor executor))))

@@ -57,7 +57,47 @@
         (= @counter 1))
       ))
   )
-(deftest first-test
-  (is (= 1 1)))
 
-;; (t/run-tests)
+(deftest no-more-than-x-heavy-routines
+  (testing "no more than x heavy routines"
+    (let [counter (atom 0)
+          w (routine/start!
+              {::routine/force-termination-timeout 0
+               ::routine/termination-timeout 0
+               ::routine/heavy-routine-pool-size 2
+               :system/get-register (fn [] (repeatedly 10
+                                                       (fn []
+                                                         {:routine/category :heavy
+                                                          :routine/fn (fn []
+                                                                        (swap! counter inc)
+                                                                        (Thread/sleep 1000)
+                                                                        )
+                                                          :routine/initial-delay-ms 0
+                                                          :routine/interval-ms 10})))})]
+      (Thread/sleep 100)
+      (routine/stop! w)
+      (is
+        (= @counter 2))
+      )))
+
+(deftest no-more-than-x-light-routines
+  (testing "no more than x light routines"
+    (let [counter (atom 0)
+          w (routine/start!
+              {::routine/force-termination-timeout 0
+               ::routine/termination-timeout 0
+               ::routine/light-routine-pool-size 10
+               :system/get-register (fn [] (repeatedly 10
+                                                       (fn []
+                                                         {:routine/category :light
+                                                          :routine/fn (fn []
+                                                                        (swap! counter inc)
+                                                                        (Thread/sleep 1000)
+                                                                        )
+                                                          :routine/initial-delay-ms 0
+                                                          :routine/interval-ms 10})))})]
+      (Thread/sleep 100)
+      (routine/stop! w)
+      (is
+        (= @counter 10))
+      )))
