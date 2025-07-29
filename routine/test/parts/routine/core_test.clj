@@ -51,7 +51,7 @@
                                                       )
                                         :routine/initial-delay-ms 0
                                         :routine/interval-ms 10}])})]
-      (Thread/sleep 0)
+      (Thread/sleep 100)
       (routine/stop! w)
       (is
         (= @counter 1))
