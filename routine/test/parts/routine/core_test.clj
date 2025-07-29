@@ -16,6 +16,47 @@
       (routine/stop! w)
       (is (= @counter 1)))))
 
+(deftest light-routine-should-never-run-in-parallel
+  (testing "light routine should never run in parallel"
+    (let [counter (atom 0)
+          w (routine/start!
+              {::routine/force-termination-timeout 0
+               ::routine/termination-timeout 0
+               :system/get-register (fn []
+                                      [{:routine/category :light
+                                        :routine/fn (fn []
+                                                      (swap! counter inc)
+                                                      (Thread/sleep 1000)
+                                                      )
+                                        :routine/initial-delay-ms 0
+                                        :routine/interval-ms 10}])})]
+      (Thread/sleep 100)
+      (routine/stop! w)
+      (is
+        (= @counter 1))
+      ))
+  )
+
+(deftest heavy-routine-should-never-run-in-parallel
+  (testing "heavy routine should never run in parallel"
+    (let [counter (atom 0)
+          w (routine/start!
+              {::routine/force-termination-timeout 0
+               ::routine/termination-timeout 0
+               :system/get-register (fn []
+                                      [{:routine/category :heavy
+                                        :routine/fn (fn []
+                                                      (swap! counter inc)
+                                                      (Thread/sleep 1000)
+                                                      )
+                                        :routine/initial-delay-ms 0
+                                        :routine/interval-ms 10}])})]
+      (Thread/sleep 0)
+      (routine/stop! w)
+      (is
+        (= @counter 1))
+      ))
+  )
 (deftest first-test
   (is (= 1 1)))
 

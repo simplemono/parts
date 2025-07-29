@@ -60,14 +60,9 @@
     (.scheduleWithFixedDelay (:routine/scheduled-executor w)
                              (fn []
                                (case (:routine/category routine)
-                                 :heavy
-                                 (.execute (:routine/heavy-routine-executor w)
-                                           (fn []
-                                             (call-routine! w)))
-                                 :light
-                                 (.execute (:routine/light-routine-executor w)
-                                           (fn []
-                                             (call-routine! w)))))
+                                 :heavy (call-routine! w)
+                                 :light (call-routine! w)
+                                 ))
                              (or (:routine/initial-delay-ms routine)
                                  (:routine/interval-ms routine))
                              (:routine/interval-ms routine)
