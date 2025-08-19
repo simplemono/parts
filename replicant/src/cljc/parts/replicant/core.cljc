@@ -73,8 +73,9 @@
         predicates (get-predicates w)
         action-enrichers (get-action-enrichers w)]
     (fn event-handler [replicant-data actions]
-      (loop [actions actions]
-        (when-let [action (first actions)]
+      (loop [actions actions
+             promises []]
+        (if-let [action (first actions)]
           (let [params (-> (merge replicant-data
                                   w
                                   {:ui/event-handler event-handler
@@ -90,7 +91,9 @@
             (if-let [predicate (predicates (first action))]
               (if (predicate params)
                 ;; Only continue if predicate returns a truthy value:
-                (recur (rest actions))
+                (recur (rest actions)
+                       (conj promises
+                             (promise-resolve nil)))
                 (log {:log/level :debug
                       :log/message "Predicate stopped the process"
                       :ui/action action}))
@@ -103,11 +106,15 @@
                              (apply conj
                                     events
                                     events*))))
-                  (recur (rest actions)))
+                  (recur (rest actions)
+                         (conj promises
+                               (promise-resolve result))))
                 (log {:log/level :warn
                       :log/message "Unknown action"
                       :ui/action action}))
-              )))))))
+              ))
+          (promise-all promises)
+          )))))
 
 (defn add-ui-log
   [w]
