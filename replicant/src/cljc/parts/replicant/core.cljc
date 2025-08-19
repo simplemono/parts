@@ -52,6 +52,20 @@
           :ui.action-enricher/fn)
         ((:ui/get-register w))))
 
+(defn promise-resolve
+  [x]
+  #?(:cljs
+     (js/Promise.resolve x)
+     :clj
+     x))
+
+(defn promise-all
+  [coll]
+  #?(:cljs
+     (js/Promise.all coll)
+     :clj
+     coll))
+
 (defn event-handler
   [{:keys [ui/store ui/log] :as w
     :or {log identity}}]
