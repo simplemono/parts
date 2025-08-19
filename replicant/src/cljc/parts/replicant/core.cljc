@@ -52,6 +52,20 @@
           :ui.action-enricher/fn)
         ((:ui/get-register w))))
 
+(defn promise-resolve
+  [x]
+  #?(:cljs
+     (js/Promise.resolve x)
+     :clj
+     x))
+
+(defn promise-all
+  [coll]
+  #?(:cljs
+     (js/Promise.all coll)
+     :clj
+     coll))
+
 (defn event-handler
   [{:keys [ui/store ui/log] :as w
     :or {log identity}}]
@@ -59,8 +73,10 @@
         predicates (get-predicates w)
         action-enrichers (get-action-enrichers w)]
     (fn event-handler [replicant-data actions]
-      (loop [actions actions]
-        (when-let [action (first actions)]
+      (loop [actions actions
+             promises []
+             ]
+        (if-let [action (first actions)]
           (let [params (-> (merge replicant-data
                                   w
                                   {:ui/event-handler event-handler
@@ -76,18 +92,26 @@
             (if-let [predicate (predicates (first action))]
               (if (predicate params)
                 ;; Only continue if predicate returns a truthy value:
-                (recur (rest actions))
-                (log {:log/level :debug
-                      :log/message "Predicate stopped the process"
-                      :ui/action action}))
+                (recur (rest actions)
+                       (conj promises
+                             (promise-resolve nil)))
+                (do
+                  (log {:log/level :debug
+                        :log/message "Predicate stopped the process"
+                        :ui/action action})
+                  promises))
               (if-let [handler (get action-handlers
                                     (first action))]
-                (do (handler params)
-                    (recur (rest actions)))
-                (log {:log/level :warn
-                      :log/message "Unknown action"
-                      :ui/action action}))
-              )))))))
+                (recur (rest actions)
+                       (conj promises
+                             (promise-resolve
+                               (handler params))))
+                (do
+                  (log {:log/level :warn
+                        :log/message "Unknown action"
+                        :ui/action action})
+                  promises))))
+          (promise-all promises))))))
 
 (defn add-ui-log
   [w]
