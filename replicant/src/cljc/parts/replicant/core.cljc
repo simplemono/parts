@@ -82,8 +82,14 @@
                       :ui/action action}))
               (if-let [handler (get action-handlers
                                     (first action))]
-                (do (handler params)
-                    (recur (rest actions)))
+                (let [result (handler params)]
+                  (when-let [events* (:events result)]
+                    (swap! (:ui/event-store w)
+                           (fn [events]
+                             (apply conj
+                                    events
+                                    events*))))
+                  (recur (rest actions)))
                 (log {:log/level :warn
                       :log/message "Unknown action"
                       :ui/action action}))
@@ -105,6 +111,12 @@
   (assoc w
          :ui/store
          (atom {})))
+
+(defn add-event-store
+  [w]
+  (assoc w
+         :ui/event-store
+         (atom [])))
 
 (defn add-pages
   [w]
@@ -179,3 +191,35 @@
      [w]
      (alias/register! :ui/a router/routing-anchor)
      w))
+
+(defn event-reducer
+  [w]
+  (fn [state event]
+    (reduce
+      (fn [state* entry]
+        (if-let [reducer (:ui.reducer/fn entry)]
+          (reducer {:state state*
+                    :event event}
+                   event)
+          state*))
+      state
+      ((:ui/get-register w)))))
+
+(defn event-store-watcher
+  [w]
+  (fn [_key _atom old-state new-state]
+    (doseq [new-event (drop (count old-state)
+                            new-state)]
+      (swap! (:ui/store w)
+             (fn [state]
+               ((event-reducer w)
+                state
+                new-event)))))
+  )
+
+(defn add-event-store-watcher
+  [w]
+  (add-watch (:ui/event-store w)
+             :event-store-watcher
+             (event-store-watcher w))
+  w)
