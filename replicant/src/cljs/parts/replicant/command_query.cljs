@@ -17,7 +17,9 @@
         (.then (fn [text]
                  (transit/transit-decode text
                                          read-opts)))
-        (.then #(swap! store query/receive-response (js/Date.) query %))
+        (.then (fn [payload]
+                 (swap! store query/receive-response (js/Date.) query payload)
+                 (:result payload)))
         (.catch (fn [error]
                   (js/console.error "query-backend error:" error)
                   (swap! store
