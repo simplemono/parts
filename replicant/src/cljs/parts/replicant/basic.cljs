@@ -77,20 +77,20 @@
   [{:ui.action/kind :store/assoc
     :ui.action/handler (fn [{:keys [action] :as w}]
                          (assoc w
-                                :events
+                                :new-events
                                 [{:event/kind :store/assoc
                                   :args (vec (rest action))}]))}
    {:ui.action/kind :store/assoc-in
     :ui.action/handler (fn [{:keys [action] :as w}]
                          (assoc w
-                                :events
+                                :new-events
                                 [{:event/kind :store/assoc-in
                                   :args (vec (rest action))}])
                          )}
    {:ui.action/kind :store/dissoc
     :ui.action/handler (fn [{:keys [action] :as w}]
                          (assoc w
-                                :events
+                                :new-events
                                 [{:event/kind :store/dissoc
                                   :args (vec (rest action))}]))}])
 

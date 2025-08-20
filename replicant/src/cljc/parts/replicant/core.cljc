@@ -108,7 +108,7 @@
               (if-let [handler (get action-handlers
                                     (first action))]
                 (let [result (handler params)]
-                  (when-let [events* (:events result)]
+                  (when-let [events* (:new-events result)]
                     (swap! (:ui/event-store w)
                            (fn [events]
                              (apply conj
