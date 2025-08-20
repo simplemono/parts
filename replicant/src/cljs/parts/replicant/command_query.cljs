@@ -84,7 +84,8 @@
                                    :error (get-in response
                                                   [:result
                                                    :error])}
-                                  on-error))))
+                                  on-error))
+                 (:result response)))
         (.catch (fn [error]
                   (js/console.error "issue-command error:" error)
                   (swap! event-store
