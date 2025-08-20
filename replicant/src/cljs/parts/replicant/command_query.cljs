@@ -5,7 +5,7 @@
             ))
 
 (defn query-backend
-  [{:keys [ui/store ui/event-store action :transit/read-opts :transit/write-opts] :as w}]
+  [{:keys [ui/event-store action :transit/read-opts :transit/write-opts] :as w}]
   (let [[_ query] action]
     (swap! event-store
            conj
@@ -36,17 +36,23 @@
                         )))
         (.catch (fn [error]
                   (js/console.error "query-backend error:" error)
-                  (swap! store
-                         query/receive-response
-                         (js/Date.)
-                         query
-                         {:error (.-message error)}))))))
+                  (swap! event-store
+                         conj
+                         {:event/kind :query/error
+                          :query/status :query.status/error
+                          :query/user-time (js/Date.)
+                          :error (.-message error)}))))))
 
 (defn issue-command
-  [{:keys [ui/store action :transit/read-opts :transit/write-opts] :as w}]
+  [{:keys [ui/event-store action :transit/read-opts :transit/write-opts] :as w}]
   (let [[_ command & [{:keys [on-success on-error]}]] action
         event-handler (:ui/event-handler w)]
-    (swap! store command/issue-command (js/Date.) command)
+    (swap! event-store
+           conj
+           {:event/kind :command/request
+            :command/status :command.status/issued
+            :command/user-time (js/Date.)
+            :command command})
     (-> (js/fetch (or (:ui/command-endpoint w)
                       "/command")
                   #js {:method "POST"
@@ -56,46 +62,70 @@
         (.then (fn [text]
                  (transit/transit-decode text
                                          read-opts)))
-        (.then (fn [res]
-                 (swap! store command/receive-response (js/Date.) command res)
-                 (when (and (:success? res)
+        (.then (fn [response]
+                 (swap! event-store
+                        conj
+                        (cond-> {:event/kind :command/response
+                                 :command command
+                                 :command/status (if (:success? response)
+                                                   :command.status/success
+                                                   :command.status/error)
+                                 :command/user-time (js/Date.)}
+                          (:result response)
+                          (assoc :command/result (:result response))))
+                 (when (and (:success? response)
                             on-success)
                    (event-handler {}
                                   on-success))
-                 (when (and (not (:success? res))
+                 (when (and (not (:success? response))
                             on-error)
                    (event-handler {:command command
-                                   :response res
-                                   :error (get-in res
+                                   :response response
+                                   :error (get-in response
                                                   [:result
                                                    :error])}
                                   on-error))))
         (.catch (fn [error]
                   (js/console.error "issue-command error:" error)
-                  (swap! store
-                         command/receive-response
-                         (js/Date.)
-                         command
-                         {:error (.-message error)}))))))
+                  (swap! event-store
+                         conj
+                         {:event/kind :command/error
+                          :command/status :command.status/error
+                          :command/user-time (js/Date.)
+                          :error (.-message error)}))))))
 
-(defn query-response-reducer
+(defn query-reducer
   [{:keys [state event]}]
   (if (#{:query/request
-         :query/response}
+         :query/response
+         :query/error}
         (:event/kind event))
     (update-in state
                [:ui.query/log (:query event)]
                query/add-log-entry
                (dissoc event
-                       :query
-                       :event/kind))
+                       :query))
+    state))
+
+(defn command-reducer
+  [{:keys [state event]}]
+  (if (#{:command/request
+         :command/response
+         :command/error}
+        (:event/kind event))
+    (update-in state
+               [:ui.command/log (:command event)]
+               command/add-log-entry
+               (dissoc event
+                       :command))
     state))
 
 (def register
   [{:ui.action/kind :data/query
     :ui.action/handler query-backend}
 
-   {:ui.reducer/fn query-response-reducer}
+   {:ui.reducer/fn query-reducer}
+   {:ui.reducer/fn command-reducer}
 
    {:ui.action/kind :data/command
     :ui.action/handler issue-command}])
