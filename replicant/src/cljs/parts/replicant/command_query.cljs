@@ -5,9 +5,14 @@
             ))
 
 (defn query-backend
-  [{:keys [ui/store action :transit/read-opts :transit/write-opts] :as w}]
+  [{:keys [ui/store ui/event-store action :transit/read-opts :transit/write-opts] :as w}]
   (let [[_ query] action]
-    (swap! store query/send-request (js/Date.) query)
+    (swap! event-store
+           conj
+           {:event/kind :query/request
+            :query/status :query.status/loading
+            :query/user-time (js/Date.)
+            :query query})
     (-> (js/fetch (or (:ui/query-endpoint w)
                       "/query")
                   #js {:method "POST"
@@ -17,7 +22,18 @@
         (.then (fn [text]
                  (transit/transit-decode text
                                          read-opts)))
-        (.then #(swap! store query/receive-response (js/Date.) query %))
+        (.then (fn [response]
+                 (swap! event-store
+                        conj
+                        (cond-> {:event/kind :query/response
+                                 :query query
+                                 :query/status (if (:success? response)
+                                                 :query.status/success
+                                                 :query.status/error)
+                                 :query/user-time (js/Date.)}
+                          (:success? response)
+                          (assoc :query/result (:result response)))
+                        )))
         (.catch (fn [error]
                   (js/console.error "query-backend error:" error)
                   (swap! store
@@ -62,9 +78,24 @@
                          command
                          {:error (.-message error)}))))))
 
+(defn query-response-reducer
+  [{:keys [state event]}]
+  (if (#{:query/request
+         :query/response}
+        (:event/kind event))
+    (update-in state
+               [:ui.query/log (:query event)]
+               query/add-log-entry
+               (dissoc event
+                       :query
+                       :event/kind))
+    state))
+
 (def register
   [{:ui.action/kind :data/query
     :ui.action/handler query-backend}
+
+   {:ui.reducer/fn query-response-reducer}
 
    {:ui.action/kind :data/command
     :ui.action/handler issue-command}])
