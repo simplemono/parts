@@ -88,8 +88,11 @@
                                   :args (vec (rest action))}])
                          )}
    {:ui.action/kind :store/dissoc
-    :ui.action/handler (fn [{:keys [action store]}]
-                         (apply swap! store dissoc (rest action)))}])
+    :ui.action/handler (fn [{:keys [action] :as w}]
+                         (assoc w
+                                :events
+                                [{:event/kind :store/dissoc
+                                  :args (vec (rest action))}]))}])
 
 (def reducers
   [{:ui.reducer/fn (fn [{:keys [state event]}]
@@ -105,7 +108,15 @@
                        (apply assoc-in
                               state
                               (:args event))
-                       state))}])
+                       state))}
+   {:ui.reducer/fn (fn [{:keys [state event]}]
+                     (if (= (:event/kind event)
+                            :store/dissoc)
+                       (apply dissoc
+                              state
+                              (:args event))
+                       state))}
+   ])
 
 (def predicates
   [
