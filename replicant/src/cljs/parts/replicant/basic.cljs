@@ -39,6 +39,13 @@
                                       (= :store/get (first x)))
                                (get (:ui/state w)
                                     (second x))))}
+
+   {:ui.action-enricher/kind :store/get-in
+    :ui.action-enricher/fn (fn [{:keys [ui.action/x] :as w}]
+                             (when (and (vector? x)
+                                        (= :store/get-in (first x)))
+                               (get-in (:ui/state w)
+                                       (second x))))}
    ])
 
 (def dom-action-handlers
