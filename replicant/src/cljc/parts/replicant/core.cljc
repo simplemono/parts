@@ -282,8 +282,7 @@
                                                (or uuid
                                                    (:event/correlation
                                                     (add-event-correlation
-                                                      (:event/correlation
-                                                       (:event w))))))))
+                                                      (:event w)))))))
                                    new-events))))))))))))
 
 #?(:cljs
