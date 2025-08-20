@@ -66,6 +66,14 @@
      :clj
      coll))
 
+(defn add-event-correlation
+  [event]
+  (update event
+          :event/correlation
+          (fn [uuid]
+            (or uuid
+                (random-uuid)))))
+
 (defn event-handler
   [{:keys [ui/store ui/log] :as w
     :or {log identity}}]
@@ -105,7 +113,9 @@
                            (fn [events]
                              (apply conj
                                     events
-                                    events*))))
+                                    (map
+                                      add-event-correlation
+                                      events*)))))
                   (recur (rest actions)
                          (conj promises
                                (promise-resolve result))))
