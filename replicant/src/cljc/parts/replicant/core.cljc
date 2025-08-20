@@ -254,3 +254,53 @@
              :event-store-watcher
              (event-store-watcher w))
   w)
+
+#?(:cljs
+   (defn event-dispatch!
+     [w]
+     (doseq [entry (filter :event.reaction/kind
+                           ((:ui/get-register w)))]
+       (when (and (:event/kind (:event w))
+                  (= (:event.reaction/kind entry)
+                     (:event/kind (:event w))))
+         (.then (js/Promise.resolve
+                  ((:event.reaction/fn entry)
+                   w))
+                (fn [result]
+                  (let [new-events (:new-events result)]
+                    (when (seq new-events)
+                      (swap!
+                        (:ui/event-store w)
+                        (fn [events]
+                          (apply conj
+                                 events
+                                 (map
+                                   (fn [new-event]
+                                     (update new-event
+                                             :event/correlation
+                                             (fn [uuid]
+                                               (or uuid
+                                                   (:event/correlation
+                                                    (add-event-correlation
+                                                      (:event/correlation
+                                                       (:event w))))))))
+                                   new-events))))))))))))
+
+#?(:cljs
+   (defn event-store-dispatcher
+     [w]
+     (fn [_key _atom old-state new-state]
+       (doseq [new-event (drop (count old-state)
+                               new-state)]
+         (event-dispatch! (assoc w
+                                 :event
+                                 new-event))))
+     ))
+
+#?(:cljs
+   (defn add-event-store-dispatcher
+     [w]
+     (add-watch (:ui/event-store w)
+                :event-store-dispatcher
+                (event-store-dispatcher w))
+     w))
