@@ -74,6 +74,20 @@
             (or uuid
                 (random-uuid)))))
 
+(defn dispatch-events!
+  [w]
+  #?(:cljs
+     (.then (js/Promise.resolve (:result w))
+            (fn [result]
+              (when-let [events* (:new-events result)]
+                (swap! (:ui/event-store w)
+                       (fn [events]
+                         (apply conj
+                                events
+                                (map
+                                  add-event-correlation
+                                  events*)))))))))
+
 (defn event-handler
   [{:keys [ui/store ui/log] :as w
     :or {log identity}}]
@@ -108,14 +122,9 @@
               (if-let [handler (get action-handlers
                                     (first action))]
                 (let [result (handler params)]
-                  (when-let [events* (:new-events result)]
-                    (swap! (:ui/event-store w)
-                           (fn [events]
-                             (apply conj
-                                    events
-                                    (map
-                                      add-event-correlation
-                                      events*)))))
+                  (dispatch-events! (assoc w
+                                           :result
+                                           result))
                   (recur (rest actions)
                          (conj promises
                                (promise-resolve result))))
