@@ -26,31 +26,31 @@
         action))))
 
 (defn get-action-handlers
-  [w]
+  [register]
   (into {}
         (keep
           (fn [entry]
             (when-let [action-handler (:ui.action/handler entry)]
               [(:ui.action/kind entry)
                action-handler])))
-        ((:ui/get-register w))))
+        register))
 
 (defn get-predicates
-  [w]
+  [register]
   (into {}
         (keep
           (fn [entry]
             (when-let [predicate (:ui.predicate/fn entry)]
               [(:ui.predicate/kind entry)
                predicate])))
-        ((:ui/get-register w))))
+        register))
 
 (defn get-action-enrichers
-  [w]
+  [register]
   (into []
         (keep
           :ui.action-enricher/fn)
-        ((:ui/get-register w))))
+        register))
 
 (defn promise-resolve
   [x]
@@ -91,27 +91,29 @@
 (defn event-handler
   [{:keys [ui/store ui/log] :as w
     :or {log identity}}]
-  (let [action-handlers (get-action-handlers w)
-        predicates (get-predicates w)
-        action-enrichers (get-action-enrichers w)]
+  (let [get-action-handlers* (memoize get-action-handlers)
+        get-predicates* (memoize get-predicates)
+        get-action-enrichers* (memoize get-action-enrichers)]
     (fn event-handler [replicant-data actions]
       (loop [actions actions
              promises []]
         (if-let [action (first actions)]
-          (let [params (-> (merge replicant-data
+          (let [register ((:ui/get-register w))
+                params (-> (merge replicant-data
                                   w
                                   {:ui/event-handler event-handler
                                    :store store
                                    :state @store
                                    :action action
-                                   :ui/action-enrichers action-enrichers})
+                                   :ui/action-enrichers (get-action-enrichers* register)})
                            (enrich-action))
                 action-enriched (:action params)]
             (log {:log/level :debug
                   :log/message "Triggered action"
                   :ui/action action
                   :ui/action-enriched action-enriched})
-            (if-let [predicate (predicates (first action))]
+            (if-let [predicate (get (get-predicates* register)
+                                    (first action))]
               (if (predicate params)
                 ;; Only continue if predicate returns a truthy value:
                 (recur (rest actions)
@@ -120,7 +122,7 @@
                 (log {:log/level :debug
                       :log/message "Predicate stopped the process"
                       :ui/action action}))
-              (if-let [handler (get action-handlers
+              (if-let [handler (get (get-action-handlers* register)
                                     (first action))]
                 (let [result (handler params)]
                   (dispatch-events! (assoc w
