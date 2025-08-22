@@ -102,6 +102,7 @@
                                   w
                                   {:ui/event-handler event-handler
                                    :store store
+                                   :state @store
                                    :action action
                                    :ui/action-enrichers action-enrichers})
                            (enrich-action))
