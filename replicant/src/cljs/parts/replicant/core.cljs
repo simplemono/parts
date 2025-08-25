@@ -100,13 +100,23 @@
 
 (defn dispatch-events!
   [w]
-  (swap! (:ui/store w)
-         apply-events
-         (:new-events w)
-         ((:ui/get-register w)))
-  (swap! (:ui/event-store w)
-         append-events
-         (:new-events w)))
+  (let [new-events (map
+                     (fn [new-event]
+                       (update new-event
+                               :event/correlation
+                               (fn [uuid]
+                                 (or uuid
+                                     (:event/correlation
+                                      (add-event-correlation
+                                        (:event w)))))))
+                     (:new-events w))]
+    (swap! (:ui/store w)
+           apply-events
+           new-events
+           ((:ui/get-register w)))
+    (swap! (:ui/event-store w)
+           append-events
+           new-events)))
 
 (defn run-in-sequence [steps]
   (reduce
