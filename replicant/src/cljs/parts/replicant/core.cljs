@@ -2,10 +2,8 @@
   "Some core parts for Replicant applications."
   (:require [clojure.walk :as walk]
             [replicant.dom :as r]
-
-            #?@(:cljs
-                [[parts.replicant.router :as router]
-                 [replicant.alias :as alias]])))
+            [parts.replicant.router :as router]
+            [replicant.alias :as alias]))
 
 (defn enrich-action
   [w]
@@ -54,17 +52,11 @@
 
 (defn promise-resolve
   [x]
-  #?(:cljs
-     (js/Promise.resolve x)
-     :clj
-     x))
+  (js/Promise.resolve x))
 
 (defn promise-all
   [coll]
-  #?(:cljs
-     (js/Promise.all coll)
-     :clj
-     coll))
+  (js/Promise.all coll))
 
 (defn add-event-correlation
   [event]
@@ -76,17 +68,16 @@
 
 (defn dispatch-events!
   [w]
-  #?(:cljs
-     (.then (js/Promise.resolve (:result w))
-            (fn [result]
-              (when-let [events* (:new-events result)]
-                (swap! (:ui/event-store w)
-                       (fn [events]
-                         (apply conj
-                                events
-                                (map
-                                  add-event-correlation
-                                  events*)))))))))
+  (.then (js/Promise.resolve (:result w))
+         (fn [result]
+           (when-let [events* (:new-events result)]
+             (swap! (:ui/event-store w)
+                    (fn [events]
+                      (apply conj
+                             events
+                             (map
+                               add-event-correlation
+                               events*))))))))
 
 (defn event-handler
   [{:keys [ui/store ui/log] :as w
@@ -143,11 +134,10 @@
   (assoc w
          :ui/log
          (fn [log-entry]
-           #?(:cljs
-              ((or (aget js/console
-                         (name (:log/level log-entry)))
-                   js/console.log)
-               (pr-str log-entry))))))
+           ((or (aget js/console
+                      (name (:log/level log-entry)))
+                js/console.log)
+            (pr-str log-entry)))))
 
 (defn add-store
   [w]
@@ -171,12 +161,11 @@
                   (:render entry)))
            ((:ui/get-register w)))))
 
-#?(:cljs
-   (defn add-routes
+(defn add-routes
      [w]
      (assoc w
             :ui/routes
-            (router/make-routes (:ui/pages w)))))
+            (router/make-routes (:ui/pages w))))
 
 (defn add-render-watcher!
   [w]
@@ -210,30 +199,27 @@
             actions)))
   w)
 
-#?(:cljs
-   (defn add-route-click!
-     [w]
-     (js/document.body.addEventListener
-       "click"
-       (fn [event]
-         (router/route-click (assoc w
-                                    :event
-                                    event))))
-     w))
+(defn add-route-click!
+  [w]
+  (js/document.body.addEventListener
+    "click"
+    (fn [event]
+      (router/route-click (assoc w
+                                 :event
+                                 event))))
+  w)
 
-#?(:cljs
-   (defn add-navigate!
-     [w]
-     (js/window.addEventListener
-       "popstate"
-       (fn [_] (router/navigate! w)))
-     w))
+(defn add-navigate!
+  [w]
+  (js/window.addEventListener
+    "popstate"
+    (fn [_] (router/navigate! w)))
+  w)
 
-#?(:cljs
-   (defn add-routing-anchor!
-     [w]
-     (alias/register! :ui/a router/routing-anchor)
-     w))
+(defn add-routing-anchor!
+  [w]
+  (alias/register! :ui/a router/routing-anchor)
+  w)
 
 (defn event-reducer
   [w]
@@ -267,51 +253,48 @@
              (event-store-watcher w))
   w)
 
-#?(:cljs
-   (defn event-dispatch!
-     [w]
-     (doseq [entry (filter :event.reaction/kind
-                           ((:ui/get-register w)))]
-       (when (and (:event/kind (:event w))
-                  (= (:event.reaction/kind entry)
-                     (:event/kind (:event w))))
-         (.then (js/Promise.resolve
-                  ((:event.reaction/fn entry)
-                   w))
-                (fn [result]
-                  (let [new-events (:new-events result)]
-                    (when (seq new-events)
-                      (swap!
-                        (:ui/event-store w)
-                        (fn [events]
-                          (apply conj
-                                 events
-                                 (map
-                                   (fn [new-event]
-                                     (update new-event
-                                             :event/correlation
-                                             (fn [uuid]
-                                               (or uuid
-                                                   (:event/correlation
-                                                    (add-event-correlation
-                                                      (:event w)))))))
-                                   new-events))))))))))))
+(defn event-dispatch!
+  [w]
+  (doseq [entry (filter :event.reaction/kind
+                        ((:ui/get-register w)))]
+    (when (and (:event/kind (:event w))
+               (= (:event.reaction/kind entry)
+                  (:event/kind (:event w))))
+      (.then (js/Promise.resolve
+               ((:event.reaction/fn entry)
+                w))
+             (fn [result]
+               (let [new-events (:new-events result)]
+                 (when (seq new-events)
+                   (swap!
+                     (:ui/event-store w)
+                     (fn [events]
+                       (apply conj
+                              events
+                              (map
+                                (fn [new-event]
+                                  (update new-event
+                                          :event/correlation
+                                          (fn [uuid]
+                                            (or uuid
+                                                (:event/correlation
+                                                 (add-event-correlation
+                                                   (:event w)))))))
+                                new-events)))))))))))
 
-#?(:cljs
-   (defn event-store-dispatcher
-     [w]
-     (fn [_key _atom old-state new-state]
-       (doseq [new-event (drop (count old-state)
-                               new-state)]
-         (event-dispatch! (assoc w
-                                 :event
-                                 new-event))))
-     ))
+(defn event-store-dispatcher
+  [w]
+  (fn [_key _atom old-state new-state]
+    (doseq [new-event (drop (count old-state)
+                            new-state)]
+      (event-dispatch! (assoc w
+                              :event
+                              new-event))))
+  )
 
-#?(:cljs
-   (defn add-event-store-dispatcher
-     [w]
-     (add-watch (:ui/event-store w)
-                :event-store-dispatcher
-                (event-store-dispatcher w))
-     w))
+(defn add-event-store-dispatcher
+  [w]
+  (add-watch (:ui/event-store w)
+             :event-store-dispatcher
+             (event-store-dispatcher w))
+  w)
