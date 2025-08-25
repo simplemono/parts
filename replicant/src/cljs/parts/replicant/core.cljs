@@ -50,14 +50,6 @@
           :ui.action-enricher/fn)
         register))
 
-(defn promise-resolve
-  [x]
-  (js/Promise.resolve x))
-
-(defn promise-all
-  [coll]
-  (js/Promise.all coll))
-
 (defn add-event-correlation
   [event]
   (update event
@@ -66,18 +58,62 @@
             (or uuid
                 (random-uuid)))))
 
+(defn dispatch-action!
+  [w]
+  (js/Promise.
+    (fn [resolve reject]
+      (let [action (:action w)]
+        (if-let [handler (get (:ui/action-handlers w)
+                              (first action))]
+          (.then (js/Promise.resolve (handler w))
+                 (fn [result]
+                   (resolve result)))
+          (reject {:error :unknown-action}))))))
+
+(defn apply-reducers
+  [state event reducers]
+  (reduce
+    (fn [state* entry]
+      (if-let [reducer (:ui.reducer/fn entry)]
+        (reducer {:state state*
+                  :event event}
+                 event)
+        state*))
+    state
+    reducers))
+
+(defn append-events
+  [event-store-state new-events]
+  (apply conj
+         event-store-state
+         new-events))
+
+(defn apply-events
+  [state new-events reducers]
+  (reduce
+    (fn [state* event]
+      (apply-reducers state*
+                      event
+                      reducers))
+    state
+    new-events))
+
 (defn dispatch-events!
   [w]
-  (.then (js/Promise.resolve (:result w))
-         (fn [result]
-           (when-let [events* (:new-events result)]
-             (swap! (:ui/event-store w)
-                    (fn [events]
-                      (apply conj
-                             events
-                             (map
-                               add-event-correlation
-                               events*))))))))
+  (swap! (:ui/store w)
+         apply-events
+         (:new-events w)
+         ((:ui/get-register w)))
+  (swap! (:ui/event-store w)
+         append-events
+         (:new-events w)))
+
+(defn run-in-sequence [steps]
+  (reduce
+    (fn [p step]
+      (.then p (fn [_] (step))))
+    (js/Promise.resolve)  ;; initial resolved promise
+    steps))
 
 (defn event-handler
   [{:keys [ui/store ui/log] :as w
@@ -86,48 +122,45 @@
         get-predicates* (memoize get-predicates)
         get-action-enrichers* (memoize get-action-enrichers)]
     (fn event-handler [replicant-data actions]
-      (loop [actions actions
-             promises []]
-        (if-let [action (first actions)]
-          (let [register ((:ui/get-register w))
-                params (-> (merge replicant-data
-                                  w
-                                  {:ui/event-handler event-handler
-                                   :store store
-                                   :state @store
-                                   :action action
-                                   :ui/action-enrichers (get-action-enrichers* register)})
-                           (enrich-action))
-                action-enriched (:action params)]
-            (log {:log/level :debug
-                  :log/message "Triggered action"
-                  :ui/action action
-                  :ui/action-enriched action-enriched})
-            (if-let [predicate (get (get-predicates* register)
-                                    (first action))]
-              (if (predicate params)
-                ;; Only continue if predicate returns a truthy value:
-                (recur (rest actions)
-                       (conj promises
-                             (promise-resolve nil)))
-                (log {:log/level :debug
-                      :log/message "Predicate stopped the process"
-                      :ui/action action}))
-              (if-let [handler (get (get-action-handlers* register)
-                                    (first action))]
-                (let [result (handler params)]
-                  (dispatch-events! (assoc w
-                                           :result
-                                           result))
-                  (recur (rest actions)
-                         (conj promises
-                               (promise-resolve result))))
-                (log {:log/level :warn
-                      :log/message "Unknown action"
-                      :ui/action action}))
-              ))
-          (promise-all promises)
-          )))))
+      (run-in-sequence
+        (map
+          (fn [action]
+            (fn []
+              (js/Promise.
+                (fn [resolve reject]
+                  (let [register ((:ui/get-register w))
+                        params (-> (merge replicant-data
+                                          w
+                                          {:ui/event-handler event-handler
+                                           :store store
+                                           :state @store
+                                           :action action
+                                           :ui/action-handlers (get-action-handlers* register)
+                                           :ui/action-enrichers (get-action-enrichers* register)})
+                                   (enrich-action))]
+                    (if-let [predicate (get (get-predicates* register)
+                                            (first action))]
+                      (when-not (predicate params)
+                        (log {:log/level :debug
+                              :log/message "Predicate stopped the process"
+                              :ui/action action})
+                        (reject :predicate-reject))
+                      ;; action:
+                      (do
+                        (log {:log/level :debug
+                              :log/message "Triggered action"
+                              :ui/action action})
+                        (-> params
+                            (dispatch-action!)
+                            (.then (fn [action-result]
+                                     (dispatch-events!
+                                       (assoc w
+                                              :new-events
+                                              (:new-events action-result)))
+                                     (resolve action-result)
+                                     ;; event.reactions are applied async
+                                     ))))))))))
+          actions)))))
 
 (defn add-ui-log
   [w]
@@ -224,34 +257,9 @@
 (defn event-reducer
   [w]
   (fn [state event]
-    (reduce
-      (fn [state* entry]
-        (if-let [reducer (:ui.reducer/fn entry)]
-          (reducer {:state state*
-                    :event event}
-                   event)
-          state*))
-      state
-      ((:ui/get-register w)))))
-
-(defn event-store-watcher
-  [w]
-  (fn [_key _atom old-state new-state]
-    (doseq [new-event (drop (count old-state)
-                            new-state)]
-      (swap! (:ui/store w)
-             (fn [state]
-               ((event-reducer w)
-                state
-                new-event)))))
-  )
-
-(defn add-event-store-watcher
-  [w]
-  (add-watch (:ui/event-store w)
-             :event-store-watcher
-             (event-store-watcher w))
-  w)
+    (apply-reducers state
+                    event
+                    ((:ui/get-register w)))))
 
 (defn event-dispatch!
   [w]
@@ -266,21 +274,8 @@
              (fn [result]
                (let [new-events (:new-events result)]
                  (when (seq new-events)
-                   (swap!
-                     (:ui/event-store w)
-                     (fn [events]
-                       (apply conj
-                              events
-                              (map
-                                (fn [new-event]
-                                  (update new-event
-                                          :event/correlation
-                                          (fn [uuid]
-                                            (or uuid
-                                                (:event/correlation
-                                                 (add-event-correlation
-                                                   (:event w)))))))
-                                new-events)))))))))))
+                   ((:ui/dispatch-events! w)
+                    new-events))))))))
 
 (defn event-store-dispatcher
   [w]
@@ -298,3 +293,12 @@
              :event-store-dispatcher
              (event-store-dispatcher w))
   w)
+
+(defn add-dispatch-events
+  [w]
+  (assoc w
+         :ui/dispatch-events!
+         (fn [new-events]
+           (dispatch-events! (assoc w
+                                    :new-events
+                                    new-events)))))

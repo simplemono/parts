@@ -64,7 +64,7 @@
                                                (:location/page-id location)))]
     (on-load location)))
 
-(defn navigate! [{:keys [ui/store ui/event-store ui/event-handler ui/routes] :as w}]
+(defn navigate! [{:keys [ui/store ui/dispatch-events! ui/event-handler ui/routes] :as w}]
   (let [location (get-current-location routes)
         current-location (:location @store)]
     (when (not= current-location location)
@@ -77,14 +77,12 @@
     ;; not reflected in the store. For example `loading?` will then
     ;; not work as expected.
 
-    (swap! event-store
-           conj
-           {:event/kind :store/assoc
-            :args [:location location]})
+    (dispatch-events! [{:event/kind :store/assoc
+                        :args [:location location]}])
     ))
 
 (defn route-click
-  [{:keys [event ui/store ui/event-store ui/routes] :as w}]
+  [{:keys [event ui/store ui/dispatch-events! ui/routes] :as w}]
   (let [href (find-target-href event)]
     (when-let [location (url->location routes href)]
       (.preventDefault event)
@@ -93,10 +91,8 @@
         (.pushState js/history nil "" href))
       (navigate! w)
 
-      (swap! event-store
-             conj
-             {:event/kind :store/assoc
-              :args [:ui/active-url js/location.pathname]})
+      (dispatch-events! [{:event/kind :store/assoc
+                          :args [:ui/active-url js/location.pathname]}])
       )))
 
 (defn routing-anchor [attrs children]
