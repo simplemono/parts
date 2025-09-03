@@ -68,14 +68,17 @@
 
 (def state-action-handlers
   [{:ui.action/kind :store/assoc
-    :ui.action/handler (fn [{:keys [action store]}]
-                         (apply swap! store assoc (rest action)))}
+    :ui.action/replay true
+    :ui.action/handler (fn [{:keys [ui/state action]}]
+                         {:ui/new-state (apply assoc state (rest action))})}
    {:ui.action/kind :store/assoc-in
-    :ui.action/handler (fn [{:keys [action store]}]
-                         (apply swap! store assoc-in (rest action)))}
+    :ui.action/replay true
+    :ui.action/handler (fn [{:keys [ui/state action]}]
+                         {:ui/new-state (apply assoc-in state (rest action))})}
    {:ui.action/kind :store/dissoc
-    :ui.action/handler (fn [{:keys [action store]}]
-                         (apply swap! store dissoc (rest action)))}])
+    :ui.action/replay true
+    :ui.action/handler (fn [{:keys [ui/state action]}]
+                         {:ui/new-state (apply dissoc state (rest action))})}])
 
 (def predicates
   [
