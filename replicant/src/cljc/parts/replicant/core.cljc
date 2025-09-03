@@ -65,6 +65,7 @@
                                   w
                                   {:ui/event-handler event-handler
                                    :store store
+                                   :ui/state @store
                                    :action action
                                    :ui/action-enrichers action-enrichers})
                            (enrich-action))
@@ -88,8 +89,12 @@
                       :ui/action action}))
               (if-let [handler (get action-handlers
                                     (first action))]
-                (do (handler params)
-                    (recur (rest actions)))
+                (let [result (handler params)]
+                  ;; Offering to keep the action handler implementation pure:
+                  (when-let [new-state (:ui/new-state result)]
+                    (reset! (:ui/store w)
+                            new-state))
+                  (recur (rest actions)))
                 (log {:log/level :warn
                       :log/message "Unknown action"
                       :ui/action action}))
