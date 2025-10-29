@@ -34,7 +34,7 @@
   [w]
   (.incrementAndGet @active-routines-count)
   (try
-    ((:routine/fn (:routine w)))
+    ((:routine/fn (:routine w)) w)
     (catch Throwable e
       ;; If `scheduleWithFixedDelay` encounters an exception it suppresses
       ;; subsequent executions. Therefore any errors are catched and logged here
