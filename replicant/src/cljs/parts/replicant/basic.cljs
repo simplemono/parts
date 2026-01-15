@@ -39,6 +39,13 @@
                                       (= :store/get (first x)))
                                (get (:ui/state w)
                                     (second x))))}
+
+   {:ui.action-enricher/kind :store/get-in
+    :ui.action-enricher/fn (fn [{:keys [ui.action/x] :as w}]
+                             (when (and (vector? x)
+                                        (= :store/get-in (first x)))
+                               (get-in (:ui/state w)
+                                       (second x))))}
    ])
 
 (def dom-action-handlers
@@ -68,14 +75,48 @@
 
 (def state-action-handlers
   [{:ui.action/kind :store/assoc
-    :ui.action/handler (fn [{:keys [action store]}]
-                         (apply swap! store assoc (rest action)))}
+    :ui.action/handler (fn [{:keys [action] :as w}]
+                         (assoc w
+                                :new-events
+                                [{:event/kind :store/assoc
+                                  :args (vec (rest action))}]))}
    {:ui.action/kind :store/assoc-in
-    :ui.action/handler (fn [{:keys [action store]}]
-                         (apply swap! store assoc-in (rest action)))}
+    :ui.action/handler (fn [{:keys [action] :as w}]
+                         (assoc w
+                                :new-events
+                                [{:event/kind :store/assoc-in
+                                  :args (vec (rest action))}])
+                         )}
    {:ui.action/kind :store/dissoc
-    :ui.action/handler (fn [{:keys [action store]}]
-                         (apply swap! store dissoc (rest action)))}])
+    :ui.action/handler (fn [{:keys [action] :as w}]
+                         (assoc w
+                                :new-events
+                                [{:event/kind :store/dissoc
+                                  :args (vec (rest action))}]))}])
+
+(def reducers
+  [{:ui.reducer/fn (fn [{:keys [state event]}]
+                     (if (= (:event/kind event)
+                            :store/assoc)
+                       (apply assoc
+                              state
+                              (:args event))
+                       state))}
+   {:ui.reducer/fn (fn [{:keys [state event]}]
+                     (if (= (:event/kind event)
+                            :store/assoc-in)
+                       (apply assoc-in
+                              state
+                              (:args event))
+                       state))}
+   {:ui.reducer/fn (fn [{:keys [state event]}]
+                     (if (= (:event/kind event)
+                            :store/dissoc)
+                       (apply dissoc
+                              state
+                              (:args event))
+                       state))}
+   ])
 
 (def predicates
   [
@@ -109,4 +150,5 @@
   (concat action-enrichers
           dom-action-handlers
           state-action-handlers
+          reducers
           predicates))
