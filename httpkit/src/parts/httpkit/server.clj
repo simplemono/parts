@@ -1,6 +1,11 @@
 (ns parts.httpkit.server
+  "HTTP Kit server integration with SSE support.
+
+   When a request has Accept: text/event-stream, injects :ring/sse-send! into the
+   world map and handles the headers-only respond pattern for SSE."
   (:require [org.httpkit.server :as httpkit]
-            [parts.ring.dispatch :as dispatch]))
+            [parts.ring.dispatch :as dispatch]
+            [clojure.string :as str]))
 
 (defn default-opts
   [w]
@@ -27,20 +32,41 @@
    {:on-open
     (fn [ch]
       (let [w @system-atom
-            ring-async-handler (dispatch/async-ring-handler w)]
-        (ring-async-handler
-         request
-         (fn [response]
-           (httpkit/send! ch response))
-         (fn [exception]
-           (when-let [log (:log/log w)]
-             (log {:log/error :ring/uncaught-exception
-                   :exception exception}))
-           (httpkit/send! ch
-                          {:status 500
-                           :headers {"Content-Type" "text/plain"}
-                           :body "internal server error"})
-           (httpkit/close ch)))))}))
+            sse? (some-> (get-in request [:headers "accept"])
+                         (str/includes? "text/event-stream"))
+            sse-send! (when sse?
+                        (fn [{:keys [event data id]}]
+                          (httpkit/send! ch
+                                        {:body (str (when event (str "event: " event "\n"))
+                                                    (when id (str "id: " id "\n"))
+                                                    (when data (str "data: " data "\n"))
+                                                    "\n")}
+                                        false)))
+            respond (fn [response]
+                      (if (and sse?
+                               (= "text/event-stream"
+                                  (get-in response [:headers "Content-Type"])))
+                        ;; SSE: send headers, keep channel open
+                        (httpkit/send! ch (select-keys response [:status :headers]) false)
+                        ;; Regular: send full response and close
+                        (httpkit/send! ch response true)))
+            raise (fn [exception]
+                    (when-let [log (:log/log w)]
+                      (log {:log/error :ring/uncaught-exception
+                            :exception exception}))
+                    (httpkit/send! ch
+                                  {:status 500
+                                   :headers {"Content-Type" "text/plain"}
+                                   :body "internal server error"})
+                    (httpkit/close ch))
+            async-handler (dispatch/async-ring-handler
+                           (cond-> w
+                             sse-send! (assoc :ring/sse-send! sse-send!)))]
+        (async-handler request respond raise)))
+    :on-close
+    (fn [_ch _status]
+      ;; Channel closed - could invoke cleanup callbacks
+      )}))
 
 (defn start!
   ([system-atom opts]
