@@ -50,9 +50,13 @@
                             on-error)
                    (event-handler {:command command
                                    :response res
-                                   :error (get-in res
-                                                  [:result
-                                                   :error])}
+                                   ;; A command-fn returns the error under [:result :error].
+                                   ;; When the command-fn throws, the server returns
+                                   ;; {:error :command-fn-failed} at the top level.
+                                   :error (or (get-in res
+                                                    [:result
+                                                     :error])
+                                              (:error res))}
                                   on-error))))
         (.catch (fn [error]
                   (js/console.error "issue-command error:" error)
