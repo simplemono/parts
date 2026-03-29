@@ -65,6 +65,7 @@
                                   w
                                   {:ui/event-handler event-handler
                                    :store store
+                                   :ui/state @store
                                    :action action
                                    :ui/action-enrichers action-enrichers})
                            (enrich-action))
@@ -73,6 +74,12 @@
                   :log/message "Triggered action"
                   :ui/action action
                   :ui/action-enriched action-enriched})
+            (when-let [action-log (:ui/action-log w)]
+              (swap! action-log
+                     conj
+                     {:date #?(:cljs (js/Date.)
+                               :clj (java.util.Date.))
+                      :action action-enriched}))
             (if-let [predicate (predicates (first action))]
               (if (predicate params)
                 ;; Only continue if predicate returns a truthy value:
@@ -82,8 +89,12 @@
                       :ui/action action}))
               (if-let [handler (get action-handlers
                                     (first action))]
-                (do (handler params)
-                    (recur (rest actions)))
+                (let [result (handler params)]
+                  ;; Offering to keep the action handler implementation pure:
+                  (when-let [new-state (:ui/new-state result)]
+                    (reset! (:ui/store w)
+                            new-state))
+                  (recur (rest actions)))
                 (log {:log/level :warn
                       :log/message "Unknown action"
                       :ui/action action}))
@@ -179,3 +190,11 @@
      [w]
      (alias/register! :ui/a router/routing-anchor)
      w))
+
+(defn add-action-log
+  "The `:ui/action-log` contains a list of all dispatched actions as data (newest action on
+   first position). Useful for action replay or sending bug reports."
+  [w]
+  (assoc w
+         :ui/action-log
+         (atom (list))))
