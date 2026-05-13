@@ -5,15 +5,18 @@
             ))
 
 (defn query-backend
-  [{:keys [ui/store action] :as w}]
+  [{:keys [ui/store action :transit/read-opts :transit/write-opts] :as w}]
   (let [[_ query] action]
     (swap! store query/send-request (js/Date.) query)
     (-> (js/fetch (or (:ui/query-endpoint w)
                       "/query")
                   #js {:method "POST"
-                       :body (transit/transit-encode query)})
+                       :body (transit/transit-encode query
+                                                     write-opts)})
         (.then #(.text %))
-        (.then transit/transit-decode)
+        (.then (fn [text]
+                 (transit/transit-decode text
+                                         read-opts)))
         (.then #(swap! store query/receive-response (js/Date.) query %))
         (.catch (fn [error]
                   (js/console.error "query-backend error:" error)
@@ -30,7 +33,7 @@
     (assoc :command/uuid (random-uuid))))
 
 (defn issue-command
-  [{:keys [ui/store action] :as w}]
+  [{:keys [ui/store action :transit/read-opts :transit/write-opts] :as w}]
   (let [[_ command & [{:keys [on-success on-error]}]] action
         event-handler (:ui/event-handler w)
         command* (ensure-command-uuid command)]
@@ -40,7 +43,9 @@
                   #js {:method "POST"
                        :body (transit/transit-encode command*)})
         (.then #(.text %))
-        (.then transit/transit-decode)
+        (.then (fn [text]
+                 (transit/transit-decode text
+                                         read-opts)))
         (.then (fn [res]
                  (swap! store command/receive-response (js/Date.) command res)
                  (when (and (:success? res)
@@ -51,9 +56,13 @@
                             on-error)
                    (event-handler {:command command
                                    :response res
-                                   :error (get-in res
-                                                  [:result
-                                                   :error])}
+                                   ;; A command-fn returns the error under [:result :error].
+                                   ;; When the command-fn throws, the server returns
+                                   ;; {:error :command-fn-failed} at the top level.
+                                   :error (or (get-in res
+                                                    [:result
+                                                     :error])
+                                              (:error res))}
                                   on-error))))
         (.catch (fn [error]
                   (js/console.error "issue-command error:" error)

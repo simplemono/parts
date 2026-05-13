@@ -1,0 +1,3 @@
+{:deps
+ {http-kit/http-kit {:mvn/version "2.8.1"}
+  simplemono.parts/ring {:local/root "../ring"}}}

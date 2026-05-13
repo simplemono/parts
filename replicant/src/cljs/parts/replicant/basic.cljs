@@ -58,7 +58,13 @@
    {:ui.action/kind :dom/alert
     :ui.action/handler (fn [{:keys [action]}]
                          (let [[_ & args] action]
-                           (js/alert (first args))))}])
+                           (js/alert (first args))))}
+   {:ui.action/kind :dom/click
+    :ui.action/handler (fn [{:keys [action]}]
+                         (let [[_ & args] action]
+                           (.click (js/document.querySelector (first args)))))}
+
+   ])
 
 (def state-action-handlers
   [{:ui.action/kind :store/assoc
