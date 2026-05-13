@@ -41,7 +41,8 @@
     (-> (js/fetch (or (:ui/command-endpoint w)
                       "/command")
                   #js {:method "POST"
-                       :body (transit/transit-encode command*)})
+                       :body (transit/transit-encode command*
+                                                     write-opts)})
         (.then #(.text %))
         (.then (fn [text]
                  (transit/transit-decode text
