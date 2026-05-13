@@ -23,15 +23,22 @@
                          query
                          {:error (.-message error)}))))))
 
+(defn ensure-command-uuid
+  [command]
+  (cond-> command
+    (not (:command/uuid command))
+    (assoc :command/uuid (random-uuid))))
+
 (defn issue-command
   [{:keys [ui/store action] :as w}]
   (let [[_ command & [{:keys [on-success on-error]}]] action
-        event-handler (:ui/event-handler w)]
+        event-handler (:ui/event-handler w)
+        command* (ensure-command-uuid command)]
     (swap! store command/issue-command (js/Date.) command)
     (-> (js/fetch (or (:ui/command-endpoint w)
                       "/command")
                   #js {:method "POST"
-                       :body (transit/transit-encode command)})
+                       :body (transit/transit-encode command*)})
         (.then #(.text %))
         (.then transit/transit-decode)
         (.then (fn [res]
