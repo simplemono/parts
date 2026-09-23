@@ -7,23 +7,28 @@
                 [[parts.replicant.router :as router]
                  [replicant.alias :as alias]])))
 
+(defn enrich-x
+  "What the enrichers make of one value of the action data, or the
+   value itself. An enricher answers nil when the value is none of its
+   business. An answer of `false` counts (an unchecked checkbox), and
+   a `false` in the action data stays `false`: picking the first truthy
+   answer turned every `false` of an action into nil."
+  [w x]
+  (loop [enrichers (seq (:ui/action-enrichers w))]
+    (if enrichers
+      (let [value ((first enrichers) (assoc w :ui.action/x x))]
+        (if (nil? value)
+          (recur (next enrichers))
+          value))
+      x)))
+
 (defn enrich-action
   [w]
-  (update
-    w
-    :action
-    (fn [action]
-      (walk/postwalk
-        (fn [x]
-          (some
-            (fn [action-enricher]
-              (action-enricher (assoc w
-                                      :ui.action/x x)))
-            (concat
-              (:ui/action-enrichers w)
-              [:ui.action/x]))
-          )
-        action))))
+  (update w
+          :action
+          (fn [action]
+            (walk/postwalk (partial enrich-x w)
+                           action))))
 
 (defn get-action-handlers
   [w]
